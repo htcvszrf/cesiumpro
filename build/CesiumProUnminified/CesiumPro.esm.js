@@ -542,6 +542,727 @@ function defined(value) {
   return value !== undefined && value !== null;
 }
 
+function compareNumber(a, b) {
+  return b - a;
+}
+
+var Event = /*#__PURE__*/function () {
+  /**
+   * 事件管理器
+   * @example
+   * const addMarkerEvent=new Event();
+   * function saveMark(mark){
+   *  console.log("添加了一个mark",mark.id)
+   * }
+   * addMarkerEvent.on(saveMark)
+   * const mark=viewer.entities.add({
+   *  id:"mark1",
+   *  billboard:{
+   *    image:"./icon/pin.png"
+   *  }
+   * })
+   * addMarkerEvent.emit(mark)
+   */
+  function Event() {
+    _classCallCheck(this, Event);
+
+    this._listeners = [];
+    this._scopes = [];
+    this._toRemove = [];
+    this._insideRaiseEvent = false;
+  }
+  /**
+   * 当前订阅事件的侦听器个数
+   */
+
+
+  _createClass(Event, [{
+    key: "addEventListener",
+
+    /**
+     * 注册事件触发时执行的回调函数
+     * @param {Function} listener 事件触发时执行的回调函数
+     * @param {Object} [scope] 侦听器函数中this的指针
+     * @return {Function} 用于取消侦听器监测的函数
+     *
+     * @see Event#removeEventListener
+     * @see Event#raise
+     */
+    value: function addEventListener(listener, scope) {
+      if (typeof listener !== 'function') {
+        throw new CesiumProError$1('侦听器应该是一个函数');
+      }
+
+      this._listeners.push(listener);
+
+      this._scopes.push(scope);
+
+      var event = this;
+      return function () {
+        event.removeEventListener(listener, scope);
+      };
+    }
+    /**
+     * 注销事件触发时的回调函数
+     * @param {Function} listener 将要被注销的函数
+     * @param {Object} [scope] 侦听器函数中this的指针
+     * @return {Boolean} 如果为真，事件被成功注销，否则，事件注销失败
+     *
+     * @see Event#addEventListener
+     * @see Event#raise
+     */
+
+  }, {
+    key: "removeEventListener",
+    value: function removeEventListener(listener, scope) {
+      if (typeof listener !== 'function') {
+        throw new CesiumProError$1('侦听器应该是一个函数');
+      }
+
+      var listeners = this._listeners;
+      var scopes = this._scopes;
+      var index = -1;
+
+      for (var i = 0; i < listeners.length; i++) {
+        if (listeners[i] === listener && scopes[i] === scope) {
+          index = i;
+          break;
+        }
+      }
+
+      if (index !== -1) {
+        if (this._insideRaiseEvent) {
+          // In order to allow removing an event subscription from within
+          // a callback, we don't actually remove the items here.  Instead
+          // remember the index they are at and undefined their value.
+          this._toRemove.push(index);
+
+          listeners[index] = undefined;
+          scopes[index] = undefined;
+        } else {
+          listeners.splice(index, 1);
+          scopes.splice(index, 1);
+        }
+
+        return true;
+      }
+
+      return false;
+    }
+    /**
+     * 触发事件
+     * @param {*} arguments 此方法接受任意数据的参数并传递给侦听器函数
+     *
+     * @see Event#addEventListener
+     * @see Event#removeEventListener
+     */
+
+  }, {
+    key: "raise",
+    value: function raise() {
+      this._insideRaiseEvent = true;
+      var i;
+      var listeners = this._listeners;
+      var scopes = this._scopes;
+      var length = listeners.length;
+
+      for (i = 0; i < length; i++) {
+        var listener = listeners[i];
+
+        if (Cesium.defined(listener)) {
+          listeners[i].apply(scopes[i], arguments);
+        }
+      } // Actually remove items removed in removeEventListener.
+
+
+      var toRemove = this._toRemove;
+      length = toRemove.length; // 降序排列，从后往前删
+
+      if (length > 0) {
+        toRemove.sort(compareNumber);
+
+        for (i = 0; i < length; i++) {
+          var index = toRemove[i];
+          listeners.splice(index, 1);
+          scopes.splice(index, 1);
+        }
+
+        toRemove.length = 0;
+      }
+
+      this._insideRaiseEvent = false;
+    }
+  }, {
+    key: "numberOfListeners",
+    get: function get() {
+      return this._listeners.length - this._toRemove.length;
+    }
+  }]);
+
+  return Event;
+}();
+
+/**
+ * 检查变是否是一个Cesium.Viewer对象
+ * @exports checkViewer
+ *
+ * @param {any} viewer 将要检查的对象
+ */
+
+function checkViewer(viewer) {
+  if (!(viewer && viewer instanceof Cesium.Viewer)) {
+    var type = _typeof(viewer);
+
+    throw new CesiumProError$1("Expected viewer to be typeof Viewer, actual typeof was ".concat(type));
+  }
+}
+
+function createProperty(name) {
+  var configurable = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+  var privateName = "_".concat(name);
+  return {
+    configurable: configurable,
+    get: function get() {
+      return this[privateName];
+    },
+    set: function set(value) {
+      var oldValue = this[privateName];
+
+      if (value !== oldValue) {
+        this[privateName] = value;
+
+        this._definitionChanged.raise(name, value, oldValue);
+      }
+    }
+  };
+}
+
+var Properties = /*#__PURE__*/function () {
+  /**
+   * 一个key-value集合，用于保存对象的属性信息
+   * @param {Object} [options={}]
+   */
+  function Properties() {
+    var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+    _classCallCheck(this, Properties);
+
+    this._definitionChange = new Event();
+    this._propertyNames = [];
+
+    for (var key in options) {
+      if (options.hasOwnProperty(key)) {
+        this["_".concat(key)] = options[key];
+
+        this._propertyNames.push(key);
+
+        Object.defineProperty(this, key, createProperty(key));
+      }
+    }
+  }
+  /**
+   * 所有属性的key值
+   * @return {Array} 所有属性的key值
+   */
+
+
+  _createClass(Properties, [{
+    key: "addProperty",
+
+    /**
+     * 添加属性
+     * @param {*} key   键
+     * @param {*} value 值
+     * @fires Properties#definitionChanged
+     */
+    value: function addProperty(key, value) {
+      if (!defined(key)) {
+        throw new CesiumProError$1('key is reqiured.');
+      }
+
+      if (this.propertyNames.includes(key)) {
+        throw new CesiumProError$1("".concat(key, "has be a registered property."));
+      }
+
+      this["_".concat(key)] = value;
+      Object.defineProperty(this, key, createProperty(key));
+    }
+    /**
+     * 删除属性
+     * @param  {*} key
+     * @fires Properties#definitionChanged
+     */
+
+  }, {
+    key: "removeProperty",
+    value: function removeProperty(key) {
+      if (!defined(key)) {
+        throw new CesiumProError$1('key is reqiured.');
+      }
+
+      if (this.propertyNames.includes(key)) {
+        delete this[key];
+        delete this["_".concat(key)];
+        var index = this.propertyNames.indexOf(key);
+        this.propertyNames.slice(index, 1);
+        this.definitionChanged.raise(key);
+      }
+    }
+    /**
+     * 将该对象转换为字符串
+     * @return {String}
+     */
+
+  }, {
+    key: "toString",
+    value: function toString() {
+      var json = this.toJson();
+      return JSON.stringify(json);
+    }
+    /**
+     * 将该对象转换为json
+     * @return {Object}
+     */
+
+  }, {
+    key: "toJson",
+    value: function toJson() {
+      var json = {};
+
+      var _iterator = _createForOfIteratorHelper(this.propertyNames),
+          _step;
+
+      try {
+        for (_iterator.s(); !(_step = _iterator.n()).done;) {
+          var property = _step.value;
+          json[property] = this[property];
+        }
+      } catch (err) {
+        _iterator.e(err);
+      } finally {
+        _iterator.f();
+      }
+
+      return json;
+    }
+    /**
+     * 判断该对象是否包含属性key
+     * @param  {*}  key
+     * @return {Boolean}
+     */
+
+  }, {
+    key: "hasProperty",
+    value: function hasProperty(key) {
+      if (!defined(key)) {
+        throw new CesiumProError$1('key is reqiured.');
+      }
+
+      return this.propertyNames.includes(key);
+    }
+    /**
+     * 其定义发生变化时触发的事件,事件订阅者以发生变化的属性、变化后的值、变化前的值作为参数。
+     * @Event
+     * @return {Event}
+     */
+
+  }, {
+    key: "destroy",
+    value: function destroy() {
+      this._definitionChanged = undefined;
+      this._propertyNames = undefined;
+    }
+  }, {
+    key: "propertyNames",
+    get: function get() {
+      return this._propertyNames;
+    }
+  }, {
+    key: "definitionChanged",
+    get: function get() {
+      return this._definitionChanged;
+    }
+  }]);
+
+  return Properties;
+}();
+
+var _Cesium = Cesium,
+    CallbackProperty = _Cesium.CallbackProperty,
+    ConstantPositionProperty = _Cesium.ConstantPositionProperty;
+
+function toCallbackProperty(values) {
+  return new CallbackProperty(function () {
+    return values;
+  }, false);
+}
+
+var Graphic = /*#__PURE__*/function () {
+  /**
+   * 可编辑的几何图形基类，定义了可编辑几何图形的公共属性和操作方法，一般做为某种图形的父类使用，不要直接创建它。
+   * @param {Cesium.Viewer} viewer
+   * @param {Object} options   具有以下属性
+   * @param {Object} entityOptions 描述一个实体对象
+   */
+  function Graphic(viewer, entityOptions) {
+    var options = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+
+    _classCallCheck(this, Graphic);
+
+    checkViewer(viewer);
+    this._viewer = viewer;
+    this._type = undefined;
+    this._properties = undefined;
+    this._show = true;
+    this._id = defaultValue$1(options.id, guid());
+    this._dataSource = new Cesium.CustomDataSource('cesiumpro-graphic');
+    this._root = this._dataSource.entities;
+    this._node = undefined;
+    this._preEdit = new Event();
+    this._postEdit = new Event();
+    this._preCreate = new Event();
+    this._postCreate = new Event();
+    this._preRemove = new Event();
+    this._postRemove = new Event();
+  }
+  /**
+   * 图形id
+   * @readonly
+   * @type {String}
+   */
+
+
+  _createClass(Graphic, [{
+    key: "add",
+
+    /**
+     * 将实体添加到场景中
+     * @fires Graphic#preCreate
+     * @fires Graphic#postCreate
+     */
+    value: function add() {
+      this.preCreate.raise(this.entity);
+
+      if (defined(this.viewer && defined(this.entity))) {
+        this._viewer.entities.add(this.entity);
+
+        this.postCreate.raise(this);
+      }
+    }
+    /**
+     * 将实体从场景中删除。
+     * @fires Graphic#preRemove
+     * @fires Graphic#postRemove
+     */
+
+  }, {
+    key: "remove",
+    value: function remove() {
+      this.preRemove.raise(this);
+
+      if (defined(this.viewer) && defined(this.entity)) {
+        this._viewer.entities.remove(this.entity);
+
+        this.postRemove.raise(this);
+      }
+    }
+    /**
+     * 销毁对象。
+     */
+
+  }, {
+    key: "destroy",
+    value: function destroy() {
+      if (defined(this.viewer) && defined(this.entity)) {
+        this._viewer.entities.remove(this.entity);
+      }
+
+      this._viewer = undefined;
+      this._entity = undefined;
+      this._entityOptions = undefined;
+      this._positions = undefined;
+      this.properties && this.properties.destroy();
+      this._properties = undefined;
+    }
+    /**
+     * 定位到图形
+     */
+
+  }, {
+    key: "zoomTo",
+    value: function zoomTo() {
+      if (defined(this._viewer)) {
+        this._viewer.flyTo([this.entity]);
+      }
+
+      if (this.entity.position) {
+        var position = this.entity.position.getValue(this._viewer.clock.currentTime);
+      }
+    }
+    /**
+     * 开始编辑几何信息，此时图形的顶点可以被修改、删除、移动。
+     * 属性信息的编辑不需要调用该方法。
+     * @fires Graphic#preEdit
+     */
+
+  }, {
+    key: "startEdit",
+    value: function startEdit() {
+      if (this.entity) {
+        this.preEdit.raise(this);
+        var callbackProperty = toCallbackProperty(this.positions);
+        this.entity.position && (this.entity.position = callbackProperty);
+        this.entity.polyline && (this.entity.polyline.positions = toCallbackProperty(this._nodePositions || this.positions));
+        this.entity.polygon && (this.entity.polygon.hierarchy = toCallbackProperty(new Cesium.PolygonHierarchy(this.positions)));
+      }
+    }
+    /**
+     * @fires Graphic#postEdit
+     * 几何要素编辑完成后调用该方法，以降低性能消耗。
+     * <p style='font-weight:bold'>建议在图形编辑完成后调用该方法，因为CallbackProperty对资源消耗比较大，虽然对单个图形来说，不调用此方法并不会有任何影响。</p>
+     */
+
+  }, {
+    key: "stopEdit",
+    value: function stopEdit() {
+      if (this.entity) {
+        var callbackProperty = toCallbackProperty(this.positions);
+        this.entity.position && (this.entity.position = this.positions);
+        this.entity.polyline && (this.entity.polyline.positions = this._nodePositions || this.positions);
+        this.entity.polygon && (this.entity.polygon.hierarchy = new Cesium.PolygonHierarchy(this.positions));
+        this.postEdit.raise(this);
+      }
+    }
+    /**
+     * 创建属性信息
+     * @private
+     */
+
+  }, {
+    key: "createProperties",
+    value: function createProperties() {
+      var options = this._entityOptions;
+      var properties = options.properties;
+
+      if (properties) {
+        this._properties = new Properties(properties);
+        delete options.properties;
+      }
+    }
+    /**
+     * 创建实体
+     * @private
+     * @return {Entity}
+     */
+
+  }, {
+    key: "createEntity",
+    value: function createEntity() {
+      this.createProperties();
+    }
+    /**
+     * 将对象转为GeoJson格式
+     * @return {Object}
+     */
+
+  }, {
+    key: "toGeoJson",
+    value: function toGeoJson() {
+      _abstract();
+    }
+    /**
+     * 返回该图形的几何描述，包括类型，经纬度等，必须在派生类中实现它。
+     * @return {Object}
+     */
+
+  }, {
+    key: "getGeometry",
+    value: function getGeometry() {
+      _abstract();
+    }
+  }, {
+    key: "id",
+    get: function get() {
+      return this._id;
+    }
+    /**
+     * 保存所有图形实体的集合
+     * @return {EntityCollection}
+     */
+
+  }, {
+    key: "root",
+    get: function get() {
+      return this._root;
+    }
+    /**
+     * 图形的顶点位置信息
+     * @readonly
+     * @return {Cartesian3[]|Cartesian3}
+     */
+
+  }, {
+    key: "positions",
+    get: function get() {
+      return this._positions;
+    }
+    /**
+     * 图形类型
+     * @readonly
+     * @type {GraphicType}
+     */
+
+  }, {
+    key: "type",
+    get: function get() {
+      return this._type;
+    }
+    /**
+     * 保存了描述该图形的所有属性信息
+     * @readonly
+     * @type {Properties} 描述该图形的所有属性信息
+     */
+
+  }, {
+    key: "properties",
+    get: function get() {
+      return this._properties;
+    }
+    /**
+     * 包含了该图形几何信息的实体，场景将根据它渲染图形，且场景中任何对该图形的操作都直接作用于其实体。
+     * @readonly
+     * @type {Cesium.Entity} 图形在场景中的实体
+     */
+
+  }, {
+    key: "entity",
+    get: function get() {
+      return this._entity;
+    }
+    /**
+     * 图形开始编辑前触发的事件，事件订阅者将以被编辑图形作为参数
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "preEdit",
+    get: function get() {
+      return this._preEdit;
+    }
+    /**
+     * 图形编辑完成后触发的事件，事件订阅者将以被编辑图形作为参数
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "postEdit",
+    get: function get() {
+      return this._postEdit;
+    }
+    /**
+     * 实体创建完成，添加到场景之前触发的事件，事件订阅者将以创建的实体作为参数。此时图形还没有添加到场景。
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "preCreate",
+    get: function get() {
+      return this._preCreate;
+    }
+    /**
+     * 图形创建完成后触发的事件，事件订阅者将以被创建的实体作为参数，此时图形已经被添加到场景中。
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "postCreate",
+    get: function get() {
+      return this._postCreate;
+    }
+    /**
+     * 图形被删除前触发的事件，事件订阅者将以被删除的图形作为参数
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "preRemove",
+    get: function get() {
+      return this._preRemove;
+    }
+    /**
+     * 图形被删除后触发的事件，事件订阅者将以被删除的图形作为参数
+     * @readonly
+     * @Event
+     * @type {Event}
+     */
+
+  }, {
+    key: "postRemove",
+    get: function get() {
+      return this._postRemove;
+    }
+    /**
+     * viewer
+     * @readonly
+     * @type {Cesium.Viewer}
+     */
+
+  }, {
+    key: "viewer",
+    get: function get() {
+      return this._viewer;
+    }
+    /**
+     * 图形是否可见
+     * @return {Bool} [description]
+     */
+
+  }, {
+    key: "show",
+    get: function get() {
+      return this._show;
+    },
+    set: function set(v) {
+      this._show = v;
+
+      if (this.entity) {
+        this.entity.show = this._show;
+      }
+    }
+  }]);
+
+  return Graphic;
+}();
+
+var BillboardGraphic = /*#__PURE__*/function (_Graphic) {
+  _inherits(BillboardGraphic, _Graphic);
+
+  var _super = _createSuper(BillboardGraphic);
+
+  function BillboardGraphic() {
+    _classCallCheck(this, BillboardGraphic);
+
+    return _super.call(this);
+  }
+
+  return BillboardGraphic;
+}(Graphic);
+
+_defineProperty(BillboardGraphic, "defaultStyle", {
+  image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuNi1jMTQ1IDc5LjE2MzQ5OSwgMjAxOC8wOC8xMy0xNjo0MDoyMiAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENDIDIwMTkgKFdpbmRvd3MpIiB4bXBNTTpJbnN0YW5jZUlEPSJ4bXAuaWlkOkJEN0VBRDA0MzJCRTExRUE5MjY2QTg3OUVFNjUyQzhCIiB4bXBNTTpEb2N1bWVudElEPSJ4bXAuZGlkOkJEN0VBRDA1MzJCRTExRUE5MjY2QTg3OUVFNjUyQzhCIj4gPHhtcE1NOkRlcml2ZWRGcm9tIHN0UmVmOmluc3RhbmNlSUQ9InhtcC5paWQ6QkQ3RUFEMDIzMkJFMTFFQTkyNjZBODc5RUU2NTJDOEIiIHN0UmVmOmRvY3VtZW50SUQ9InhtcC5kaWQ6QkQ3RUFEMDMzMkJFMTFFQTkyNjZBODc5RUU2NTJDOEIiLz4gPC9yZGY6RGVzY3JpcHRpb24+IDwvcmRmOlJERj4gPC94OnhtcG1ldGE+IDw/eHBhY2tldCBlbmQ9InIiPz6qzlgwAAADR0lEQVR42uxXTUhUURQ+88aZ93JSZyiDCCkt+0VLtGzRn/QntotMoqBEol1Ui9JVtNCsoKJNSFgQREjRKiXF/mxToIQK2YBZIRKlaE1pb+Y5M33n+dRJfTN3ZoLZdOG7986dc75z5v6cc8YSDAYpkU2iBLeEO5AUpfxy4BCwHVgLLDTWh4B3wEvgPvBBlNAy1x1w3fP89XnkcOoyDJeBA6wTgZMJHwJnwfNpBk/0DkCpFEM9kKL6iR591qixX6OukQB9+x3QZRbNkyjXJdG+DBvtX2ojxaov/wQqwPUgZgegUIHhFss19o9TVYdK/aOBsD8/wyHRxXwFziRN7sZx8NWbOWB6CSFchKGOjZ9/q9KRtrGIxrmxDMuyjnFcdQaX+B3g7QZ6gCWXur1U2+WN6YZX5sp0Lkfm6YBxaT2iO3CKjbcP+elKtzfmJ8a6zMFcwGnRHVB4J/mJFbeM0ptBf1zvvDDdSk/2OCafagagRtqBvWy8c9gft3FuzMFcRswoFjmC3dy1DIybktqhVVugUF9pCn0EeG4PE1NDuHaJOFDA3auv5r/+Qp5CJ1bZyWW3kBPgedV62VQ+hGujiANZ3Lk95g6UZdlmrR1dYTeVD+HKFHHAyd2w+u/SdAiXS8QBXVpJMg/5DX3arLW7vZqpvGyd4lJFHOCsRuuc5reKo1yd20fffUEdPK/pVE3lc1xTXL0i6fgxsKEs02b6DH2IyJXtqg6RdjDTFsodMRAtBvq8AVJ2NP2i9z8CcZ3/6jSJXpTMJ1nSt58v+JdIR8AC1VCg21uSKdVmidk469aDQ56wUj3TeLhkxHvWCmx7jWMoez5GHi0YtfGGomTanK4XB21GENKEkhHyt2ZUP24maC120Mo08fKRZVnHMO5mLoNTvB6AwiCGnZyWs1MlegbC8mx72HqMvzuGgMSyrIPWzRwGV/RVMRQ5j2/laOpAXLi6SaEmZLb8BdZZsrzG310rVMgxEUOesq7BEXdRynG2Bjij66BrQol2o2eiVji5RqYSlGCW6UB2nesR8PjiLkpnEHCqvmM8VTJ5QeXQbzbRnyPuwoEo4QRuAv7gdPMba85o+WJxYBJ5QDPQYsxj4rH8/3OaaAf+CDAAVvn1VEy/MOwAAAAASUVORK5CYII=',
+  verticalOrigin: Cesium.VerticalOrigin.BASELINE
+});
+
 /**
  * 坐标转换工具
  * @namespace CVT
@@ -1923,21 +2644,6 @@ CartometryType.getKey = function (value) {
 };
 
 var CartometryType$1 = Object.freeze(CartometryType);
-
-/**
- * 检查变是否是一个Cesium.Viewer对象
- * @exports checkViewer
- *
- * @param {any} viewer 将要检查的对象
- */
-
-function checkViewer(viewer) {
-  if (!(viewer && viewer instanceof Cesium.Viewer)) {
-    var type = _typeof(viewer);
-
-    throw new CesiumProError$1("Expected viewer to be typeof Viewer, actual typeof was ".concat(type));
-  }
-}
 
 /**
  * @exports clone
@@ -12067,172 +12773,12 @@ var DraggableElement = /*#__PURE__*/function () {
   return DraggableElement;
 }();
 
-function compareNumber(a, b) {
-  return b - a;
-}
-
-var Event = /*#__PURE__*/function () {
-  /**
-   * 事件管理器
-   * @example
-   * const addMarkerEvent=new Event();
-   * function saveMark(mark){
-   *  console.log("添加了一个mark",mark.id)
-   * }
-   * addMarkerEvent.on(saveMark)
-   * const mark=viewer.entities.add({
-   *  id:"mark1",
-   *  billboard:{
-   *    image:"./icon/pin.png"
-   *  }
-   * })
-   * addMarkerEvent.emit(mark)
-   */
-  function Event() {
-    _classCallCheck(this, Event);
-
-    this._listeners = [];
-    this._scopes = [];
-    this._toRemove = [];
-    this._insideRaiseEvent = false;
-  }
-  /**
-   * 当前订阅事件的侦听器个数
-   */
-
-
-  _createClass(Event, [{
-    key: "addEventListener",
-
-    /**
-     * 注册事件触发时执行的回调函数
-     * @param {Function} listener 事件触发时执行的回调函数
-     * @param {Object} [scope] 侦听器函数中this的指针
-     * @return {Function} 用于取消侦听器监测的函数
-     *
-     * @see Event#removeEventListener
-     * @see Event#raise
-     */
-    value: function addEventListener(listener, scope) {
-      if (typeof listener !== 'function') {
-        throw new CesiumProError$1('侦听器应该是一个函数');
-      }
-
-      this._listeners.push(listener);
-
-      this._scopes.push(scope);
-
-      var event = this;
-      return function () {
-        event.removeEventListener(listener, scope);
-      };
-    }
-    /**
-     * 注销事件触发时的回调函数
-     * @param {Function} listener 将要被注销的函数
-     * @param {Object} [scope] 侦听器函数中this的指针
-     * @return {Boolean} 如果为真，事件被成功注销，否则，事件注销失败
-     *
-     * @see Event#addEventListener
-     * @see Event#raise
-     */
-
-  }, {
-    key: "removeEventListener",
-    value: function removeEventListener(listener, scope) {
-      if (typeof listener !== 'function') {
-        throw new CesiumProError$1('侦听器应该是一个函数');
-      }
-
-      var listeners = this._listeners;
-      var scopes = this._scopes;
-      var index = -1;
-
-      for (var i = 0; i < listeners.length; i++) {
-        if (listeners[i] === listener && scopes[i] === scope) {
-          index = i;
-          break;
-        }
-      }
-
-      if (index !== -1) {
-        if (this._insideRaiseEvent) {
-          // In order to allow removing an event subscription from within
-          // a callback, we don't actually remove the items here.  Instead
-          // remember the index they are at and undefined their value.
-          this._toRemove.push(index);
-
-          listeners[index] = undefined;
-          scopes[index] = undefined;
-        } else {
-          listeners.splice(index, 1);
-          scopes.splice(index, 1);
-        }
-
-        return true;
-      }
-
-      return false;
-    }
-    /**
-     * 触发事件
-     * @param {*} arguments 此方法接受任意数据的参数并传递给侦听器函数
-     *
-     * @see Event#addEventListener
-     * @see Event#removeEventListener
-     */
-
-  }, {
-    key: "raise",
-    value: function raise() {
-      this._insideRaiseEvent = true;
-      var i;
-      var listeners = this._listeners;
-      var scopes = this._scopes;
-      var length = listeners.length;
-
-      for (i = 0; i < length; i++) {
-        var listener = listeners[i];
-
-        if (Cesium.defined(listener)) {
-          listeners[i].apply(scopes[i], arguments);
-        }
-      } // Actually remove items removed in removeEventListener.
-
-
-      var toRemove = this._toRemove;
-      length = toRemove.length; // 降序排列，从后往前删
-
-      if (length > 0) {
-        toRemove.sort(compareNumber);
-
-        for (i = 0; i < length; i++) {
-          var index = toRemove[i];
-          listeners.splice(index, 1);
-          scopes.splice(index, 1);
-        }
-
-        toRemove.length = 0;
-      }
-
-      this._insideRaiseEvent = false;
-    }
-  }, {
-    key: "numberOfListeners",
-    get: function get() {
-      return this._listeners.length - this._toRemove.length;
-    }
-  }]);
-
-  return Event;
-}();
-
-var _Cesium = Cesium,
-    SceneMode = _Cesium.SceneMode,
-    Rectangle = _Cesium.Rectangle,
-    Cartesian3 = _Cesium.Cartesian3,
-    Matrix4 = _Cesium.Matrix4,
-    Camera = _Cesium.Camera;
+var _Cesium$1 = Cesium,
+    SceneMode = _Cesium$1.SceneMode,
+    Rectangle = _Cesium$1.Rectangle,
+    Cartesian3 = _Cesium$1.Cartesian3,
+    Matrix4 = _Cesium$1.Matrix4,
+    Camera = _Cesium$1.Camera;
 window.DEFAULT_VIEW_RECTANGLE = Rectangle.fromDegrees(70, 5, 130, 60);
 /**
  * 定位到中国
@@ -12332,533 +12878,6 @@ function fxaa(viewer, value) {
   checkViewer(viewer);
   viewer.scene.postProcessStages.fxaa.enabled = value;
 }
-
-function createProperty(name) {
-  var configurable = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
-  var privateName = "_".concat(name);
-  return {
-    configurable: configurable,
-    get: function get() {
-      return this[privateName];
-    },
-    set: function set(value) {
-      var oldValue = this[privateName];
-
-      if (value !== oldValue) {
-        this[privateName] = value;
-
-        this._definitionChanged.raise(name, value, oldValue);
-      }
-    }
-  };
-}
-
-var Properties = /*#__PURE__*/function () {
-  /**
-   * 一个key-value集合，用于保存对象的属性信息
-   * @param {Object} [options={}]
-   */
-  function Properties() {
-    var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
-
-    _classCallCheck(this, Properties);
-
-    this._definitionChange = new Event();
-    this._propertyNames = [];
-
-    for (var key in options) {
-      if (options.hasOwnProperty(key)) {
-        this["_".concat(key)] = options[key];
-
-        this._propertyNames.push(key);
-
-        Object.defineProperty(this, key, createProperty(key));
-      }
-    }
-  }
-  /**
-   * 所有属性的key值
-   * @return {Array} 所有属性的key值
-   */
-
-
-  _createClass(Properties, [{
-    key: "addProperty",
-
-    /**
-     * 添加属性
-     * @param {*} key   键
-     * @param {*} value 值
-     * @fires Properties#definitionChanged
-     */
-    value: function addProperty(key, value) {
-      if (!defined(key)) {
-        throw new CesiumProError$1('key is reqiured.');
-      }
-
-      if (this.propertyNames.includes(key)) {
-        throw new CesiumProError$1("".concat(key, "has be a registered property."));
-      }
-
-      this["_".concat(key)] = value;
-      Object.defineProperty(this, key, createProperty(key));
-    }
-    /**
-     * 删除属性
-     * @param  {*} key
-     * @fires Properties#definitionChanged
-     */
-
-  }, {
-    key: "removeProperty",
-    value: function removeProperty(key) {
-      if (!defined(key)) {
-        throw new CesiumProError$1('key is reqiured.');
-      }
-
-      if (this.propertyNames.includes(key)) {
-        delete this[key];
-        delete this["_".concat(key)];
-        var index = this.propertyNames.indexOf(key);
-        this.propertyNames.slice(index, 1);
-        this.definitionChanged.raise(key);
-      }
-    }
-    /**
-     * 将该对象转换为字符串
-     * @return {String}
-     */
-
-  }, {
-    key: "toString",
-    value: function toString() {
-      var json = this.toJson();
-      return JSON.stringify(json);
-    }
-    /**
-     * 将该对象转换为json
-     * @return {Object}
-     */
-
-  }, {
-    key: "toJson",
-    value: function toJson() {
-      var json = {};
-
-      var _iterator = _createForOfIteratorHelper(this.propertyNames),
-          _step;
-
-      try {
-        for (_iterator.s(); !(_step = _iterator.n()).done;) {
-          var property = _step.value;
-          json[property] = this[property];
-        }
-      } catch (err) {
-        _iterator.e(err);
-      } finally {
-        _iterator.f();
-      }
-
-      return json;
-    }
-    /**
-     * 判断该对象是否包含属性key
-     * @param  {*}  key
-     * @return {Boolean}
-     */
-
-  }, {
-    key: "hasProperty",
-    value: function hasProperty(key) {
-      if (!defined(key)) {
-        throw new CesiumProError$1('key is reqiured.');
-      }
-
-      return this.propertyNames.includes(key);
-    }
-    /**
-     * 其定义发生变化时触发的事件,事件订阅者以发生变化的属性、变化后的值、变化前的值作为参数。
-     * @Event
-     * @return {Event}
-     */
-
-  }, {
-    key: "destroy",
-    value: function destroy() {
-      this._definitionChanged = undefined;
-      this._propertyNames = undefined;
-    }
-  }, {
-    key: "propertyNames",
-    get: function get() {
-      return this._propertyNames;
-    }
-  }, {
-    key: "definitionChanged",
-    get: function get() {
-      return this._definitionChanged;
-    }
-  }]);
-
-  return Properties;
-}();
-
-var _Cesium$1 = Cesium,
-    CallbackProperty = _Cesium$1.CallbackProperty,
-    ConstantPositionProperty = _Cesium$1.ConstantPositionProperty;
-
-function toCallbackProperty(values) {
-  return new CallbackProperty(function () {
-    return values;
-  }, false);
-}
-
-var Graphic = /*#__PURE__*/function () {
-  /**
-   * 可编辑的几何图形基类，定义了可编辑几何图形的公共属性和操作方法，一般做为某种图形的父类使用，不要直接创建它。
-   * @param {Cesium.Viewer} viewer
-   * @param {Object} options   具有以下属性
-   * @param {Object} entityOptions 描述一个实体对象
-   */
-  function Graphic(viewer, entityOptions) {
-    var options = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
-
-    _classCallCheck(this, Graphic);
-
-    checkViewer(viewer);
-    this._viewer = viewer;
-    this._type = undefined;
-    this._properties = undefined;
-    this._show = true;
-    this._id = defaultValue$1(options.id, guid());
-    this._dataSource = new Cesium.CustomDataSource('cesiumpro-graphic');
-    this._root = this._dataSource.entities;
-    this._node = undefined;
-    this._preEdit = new Event();
-    this._postEdit = new Event();
-    this._preCreate = new Event();
-    this._postCreate = new Event();
-    this._preRemove = new Event();
-    this._postRemove = new Event();
-  }
-  /**
-   * 图形id
-   * @readonly
-   * @type {String}
-   */
-
-
-  _createClass(Graphic, [{
-    key: "add",
-
-    /**
-     * 将实体添加到场景中
-     * @fires Graphic#preCreate
-     * @fires Graphic#postCreate
-     */
-    value: function add() {
-      this.preCreate.raise(this.entity);
-
-      if (defined(this.viewer && defined(this.entity))) {
-        this._viewer.entities.add(this.entity);
-
-        this.postCreate.raise(this);
-      }
-    }
-    /**
-     * 将实体从场景中删除。
-     * @fires Graphic#preRemove
-     * @fires Graphic#postRemove
-     */
-
-  }, {
-    key: "remove",
-    value: function remove() {
-      this.preRemove.raise(this);
-
-      if (defined(this.viewer) && defined(this.entity)) {
-        this._viewer.entities.remove(this.entity);
-
-        this.postRemove.raise(this);
-      }
-    }
-    /**
-     * 销毁对象。
-     */
-
-  }, {
-    key: "destroy",
-    value: function destroy() {
-      if (defined(this.viewer) && defined(this.entity)) {
-        this._viewer.entities.remove(this.entity);
-      }
-
-      this._viewer = undefined;
-      this._entity = undefined;
-      this._entityOptions = undefined;
-      this._positions = undefined;
-      this.properties && this.properties.destroy();
-      this._properties = undefined;
-    }
-    /**
-     * 定位到图形
-     */
-
-  }, {
-    key: "zoomTo",
-    value: function zoomTo() {
-      if (defined(this._viewer)) {
-        this._viewer.flyTo([this.entity]);
-      }
-
-      if (this.entity.position) {
-        var position = this.entity.position.getValue(this._viewer.clock.currentTime);
-      }
-    }
-    /**
-     * 开始编辑几何信息，此时图形的顶点可以被修改、删除、移动。
-     * 属性信息的编辑不需要调用该方法。
-     * @fires Graphic#preEdit
-     */
-
-  }, {
-    key: "startEdit",
-    value: function startEdit() {
-      if (this.entity) {
-        this.preEdit.raise(this);
-        var callbackProperty = toCallbackProperty(this.positions);
-        this.entity.position && (this.entity.position = callbackProperty);
-        this.entity.polyline && (this.entity.polyline.positions = toCallbackProperty(this._nodePositions || this.positions));
-        this.entity.polygon && (this.entity.polygon.hierarchy = toCallbackProperty(new Cesium.PolygonHierarchy(this.positions)));
-      }
-    }
-    /**
-     * @fires Graphic#postEdit
-     * 几何要素编辑完成后调用该方法，以降低性能消耗。
-     * <p style='font-weight:bold'>建议在图形编辑完成后调用该方法，因为CallbackProperty对资源消耗比较大，虽然对单个图形来说，不调用此方法并不会有任何影响。</p>
-     */
-
-  }, {
-    key: "stopEdit",
-    value: function stopEdit() {
-      if (this.entity) {
-        var callbackProperty = toCallbackProperty(this.positions);
-        this.entity.position && (this.entity.position = this.positions);
-        this.entity.polyline && (this.entity.polyline.positions = this._nodePositions || this.positions);
-        this.entity.polygon && (this.entity.polygon.hierarchy = new Cesium.PolygonHierarchy(this.positions));
-        this.postEdit.raise(this);
-      }
-    }
-    /**
-     * 创建属性信息
-     * @private
-     */
-
-  }, {
-    key: "createProperties",
-    value: function createProperties() {
-      var options = this._entityOptions;
-      var properties = options.properties;
-
-      if (properties) {
-        this._properties = new Properties(properties);
-        delete options.properties;
-      }
-    }
-    /**
-     * 创建实体
-     * @private
-     * @return {Entity}
-     */
-
-  }, {
-    key: "createEntity",
-    value: function createEntity() {
-      this.createProperties();
-    }
-    /**
-     * 将对象转为GeoJson格式
-     * @return {Object}
-     */
-
-  }, {
-    key: "toGeoJson",
-    value: function toGeoJson() {
-      _abstract();
-    }
-    /**
-     * 返回该图形的几何描述，包括类型，经纬度等，必须在派生类中实现它。
-     * @return {Object}
-     */
-
-  }, {
-    key: "getGeometry",
-    value: function getGeometry() {
-      _abstract();
-    }
-  }, {
-    key: "id",
-    get: function get() {
-      return this._id;
-    }
-    /**
-     * 保存所有图形实体的集合
-     * @return {EntityCollection}
-     */
-
-  }, {
-    key: "root",
-    get: function get() {
-      return this._root;
-    }
-    /**
-     * 图形的顶点位置信息
-     * @readonly
-     * @return {Cartesian3[]|Cartesian3}
-     */
-
-  }, {
-    key: "positions",
-    get: function get() {
-      return this._positions;
-    }
-    /**
-     * 图形类型
-     * @readonly
-     * @type {GraphicType}
-     */
-
-  }, {
-    key: "type",
-    get: function get() {
-      return this._type;
-    }
-    /**
-     * 保存了描述该图形的所有属性信息
-     * @readonly
-     * @type {Properties} 描述该图形的所有属性信息
-     */
-
-  }, {
-    key: "properties",
-    get: function get() {
-      return this._properties;
-    }
-    /**
-     * 包含了该图形几何信息的实体，场景将根据它渲染图形，且场景中任何对该图形的操作都直接作用于其实体。
-     * @readonly
-     * @type {Cesium.Entity} 图形在场景中的实体
-     */
-
-  }, {
-    key: "entity",
-    get: function get() {
-      return this._entity;
-    }
-    /**
-     * 图形开始编辑前触发的事件，事件订阅者将以被编辑图形作为参数
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "preEdit",
-    get: function get() {
-      return this._preEdit;
-    }
-    /**
-     * 图形编辑完成后触发的事件，事件订阅者将以被编辑图形作为参数
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "postEdit",
-    get: function get() {
-      return this._postEdit;
-    }
-    /**
-     * 实体创建完成，添加到场景之前触发的事件，事件订阅者将以创建的实体作为参数。此时图形还没有添加到场景。
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "preCreate",
-    get: function get() {
-      return this._preCreate;
-    }
-    /**
-     * 图形创建完成后触发的事件，事件订阅者将以被创建的实体作为参数，此时图形已经被添加到场景中。
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "postCreate",
-    get: function get() {
-      return this._postCreate;
-    }
-    /**
-     * 图形被删除前触发的事件，事件订阅者将以被删除的图形作为参数
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "preRemove",
-    get: function get() {
-      return this._preRemove;
-    }
-    /**
-     * 图形被删除后触发的事件，事件订阅者将以被删除的图形作为参数
-     * @readonly
-     * @Event
-     * @type {Event}
-     */
-
-  }, {
-    key: "postRemove",
-    get: function get() {
-      return this._postRemove;
-    }
-    /**
-     * viewer
-     * @readonly
-     * @type {Cesium.Viewer}
-     */
-
-  }, {
-    key: "viewer",
-    get: function get() {
-      return this._viewer;
-    }
-    /**
-     * 图形是否可见
-     * @return {Bool} [description]
-     */
-
-  }, {
-    key: "show",
-    get: function get() {
-      return this._show;
-    },
-    set: function set(v) {
-      this._show = v;
-
-      if (this.entity) {
-        this.entity.show = this._show;
-      }
-    }
-  }]);
-
-  return Graphic;
-}();
 
 /**
  * 为了方便管理几何要素自定义的几何类型，它不符合OGC标准。
@@ -17448,6 +17467,27 @@ var ModelAttachVector = /*#__PURE__*/function () {
 
   return ModelAttachVector;
 }();
+
+var ModelGraphic = /*#__PURE__*/function (_Graphic) {
+  _inherits(ModelGraphic, _Graphic);
+
+  var _super = _createSuper(ModelGraphic);
+
+  function ModelGraphic() {
+    _classCallCheck(this, ModelGraphic);
+
+    return _super.call(this);
+  }
+
+  return ModelGraphic;
+}(Graphic);
+
+_defineProperty(ModelGraphic, "defaultStyle", {
+  colorBlendMode: Cesium.ColorBlendMode.HIGHLIGHT,
+  color: Cesium.Color.WHITE,
+  colorBlendAmount: 0.5,
+  minimumPixelSize: 64
+});
 
 /**
  * 坐标拾取函数,如果pixel所在位置有Primitive或Entity，将获取Primitive或Entity上的位置，否则获取球面坐标。
@@ -25574,9 +25614,51 @@ var SpecularReflection = /*#__PURE__*/function (_PostProcessing) {
   return SpecularReflection;
 }(PostProcessing);
 
+// import selectFrag from "./shaders/select";
+// import blurFrag from "./shaders/seperableBlur";
+// import bloomFrag from "./shaders/bloom";
+var selectFrag = '';
+
+var UnrealBloomPass = function UnrealBloomPass() {
+  _classCallCheck(this, UnrealBloomPass);
+
+  var kernelSizeArray = [3, 5, 7, 9, 11];
+  this.nMips = kernelSizeArray.length;
+  var array = [];
+  var selectPass = new Cesium.PostProcessStage({
+    fragmentShader: selectFrag
+  });
+  array.push(selectPass);
+  Object.defineProperties(uniforms, {
+    bloomStrength: {
+      get: function get() {
+        return bloomPass.uniforms.bloomStrength;
+      },
+      set: function set(value) {
+        bloomPass.uniforms.bloomStrength = value;
+      }
+    },
+    bloomRadius: {
+      get: function get() {
+        return bloomPass.uniforms.bloomRadius;
+      },
+      set: function set(value) {
+        array[2].uniforms.bloomRadius = value;
+        array[4].uniforms.bloomRadius = value;
+        array[6].uniforms.bloomRadius = value;
+        array[8].uniforms.bloomRadius = value;
+        array[10].uniforms.bloomRadius = value;
+        bloomPass.uniforms.bloomRadius = value;
+      }
+    }
+  });
+};
+
 var shader$j = "\n  czm_material czm_getMaterial(czm_materialInput materialInput) {\n  czm_material material = czm_getDefaultMaterial(materialInput);\n  vec2 st = materialInput.st;\n  vec4 imageRgba=texture2D(image, vec2(1.0 - fract(time - st.s),st.t));\n  material.alpha =imageRgba.a * color.a;\n  material.diffuse = max(color.rgb * material.alpha * 3.0, color.rgb);\n  return material;\n}\n";
 
-var shader$k = "\nczm_material czm_getMaterial(czm_materialInput materialInput){\n  czm_material material=czm_getDefaultMaterial(materialInput);\n  vec2 st=materialInput.st;\n  material.alpha=fract(time-st.s)*color.a;\n  material.diffuse=color.rgb;\n  return material;\n}\n";
+var shader$k = "\nczm_material czm_getMaterial(czm_materialInput materialInput){\n  czm_material material=czm_getDefaultMaterial(materialInput);\n\n}\n";
+
+var shader$l = "\nczm_material czm_getMaterial(czm_materialInput materialInput){\n  czm_material material=czm_getDefaultMaterial(materialInput);\n  vec2 st=materialInput.st;\n  material.alpha=fract(time-st.s)*color.a;\n  material.diffuse=color.rgb;\n  return material;\n}\n";
 
 var tmp = {};
 
@@ -38747,13 +38829,13 @@ var shapefile$1 = {
   read: read
 };
 
-var shader$l = "\n#define NUM_MIPS 5\nvarying vec2 v_textureCoordinates;\nuniform sampler2D blurTexture1;\nuniform sampler2D blurTexture2;\nuniform sampler2D blurTexture3;\nuniform sampler2D blurTexture4;\nuniform sampler2D blurTexture5;\nuniform sampler2D colorTexture;\nuniform float bloomStrength;\nuniform float bloomRadius;\nuniform float bloomFactors[NUM_MIPS];\nuniform vec3 bloomTintColors[NUM_MIPS];\nfloat lerpBloomFactor(const in float factor){\n  float mirrorFactor=1.2-factor;\n  return mix(factor,mirrorFactor,bloomRadius);\n}\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  gl_FragColor=bloomStrength*(\n    lerpBloomFactor(bloomFactors[0])*vec4(bloomTintColors[0],1.0)*texture2D(blurTexture1,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[1])*vec4(bloomTintColors[1],1.0)*texture2D(blurTexture2,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[2])*vec4(bloomTintColors[2],1.0)*texture2D(blurTexture3,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[3])*vec4(bloomTintColors[3],1.0)*texture2D(blurTexture4,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[4])*vec4(bloomTintColors[4],1.0)*texture2D(blurTexture5,v_textureCoordinates)\n  )+color;\n}";
+var shader$m = "\n#define NUM_MIPS 5\nvarying vec2 v_textureCoordinates;\nuniform sampler2D blurTexture1;\nuniform sampler2D blurTexture2;\nuniform sampler2D blurTexture3;\nuniform sampler2D blurTexture4;\nuniform sampler2D blurTexture5;\nuniform sampler2D colorTexture;\nuniform float bloomStrength;\nuniform float bloomRadius;\nuniform float bloomFactors[NUM_MIPS];\nuniform vec3 bloomTintColors[NUM_MIPS];\nfloat lerpBloomFactor(const in float factor){\n  float mirrorFactor=1.2-factor;\n  return mix(factor,mirrorFactor,bloomRadius);\n}\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  gl_FragColor=bloomStrength*(\n    lerpBloomFactor(bloomFactors[0])*vec4(bloomTintColors[0],1.0)*texture2D(blurTexture1,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[1])*vec4(bloomTintColors[1],1.0)*texture2D(blurTexture2,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[2])*vec4(bloomTintColors[2],1.0)*texture2D(blurTexture3,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[3])*vec4(bloomTintColors[3],1.0)*texture2D(blurTexture4,v_textureCoordinates)+\n    lerpBloomFactor(bloomFactors[4])*vec4(bloomTintColors[4],1.0)*texture2D(blurTexture5,v_textureCoordinates)\n  )+color;\n}";
 
-var shader$m = "\nuniform sampler2D colorTexture;\nvarying vec2 v_textureCoordinates;\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  if(czm_selected()){\n    gl_FragColor=color;\n  }else{\n    gl_FragColor=vec4(0.0);\n  }\n}\n";
+var shader$n = "\nuniform sampler2D colorTexture;\nvarying vec2 v_textureCoordinates;\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  if(czm_selected()){\n    gl_FragColor=color;\n  }else{\n    gl_FragColor=vec4(0.0);\n  }\n}\n";
 
-var shader$n = "\nuniform sampler2D colorTexture;\nuniform vec2 direction;\nuniform float scale;\nuniform float bloomRadius;\nfloat gaussianPdf(in float x, in float sigma) {\n  return 0.39894 * exp(-0.5 * x * x/(sigma * sigma))/sigma;\n}\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  float fSigma=float(SIGMA);\n  vec2 size=vec2(czm_viewport.z,czm_viewport.w)*scale*fSigma*2.0;\n  vec2 invSize=(1.0+bloomRadius)/size;\n  float weightSum=gaussianPdf(0.0,fSigma);\n  vec3 diffuseSum=texture2D(colorTexture,v_textureCoordinates).rgb*weightSum;\n  bool selected=false;\n  for(int i=0;i<KERNEL_RADIUS;i++){\n    float x=float(i);\n    float w=gaussianPdf(x,fSigma);\n    vec2 uvOffset=direction*invSize*x;\n    vec3 sample1=texture2D(colorTexture,v_textureCoordinates+uvOffset).rgb;\n    vec3 sample2=texture2D(colorTexture,v_textureCoordinates-uvOffset).rgb;\n    diffuseSum+=(sample1+sample2)*w;\n    weightSum+=2.0*w;\n  }\n  gl_FragColor=vec4(diffuseSum/weightSum,2.0);\n}\n";
+var shader$o = "\nuniform sampler2D colorTexture;\nuniform vec2 direction;\nuniform float scale;\nuniform float bloomRadius;\nfloat gaussianPdf(in float x, in float sigma) {\n  return 0.39894 * exp(-0.5 * x * x/(sigma * sigma))/sigma;\n}\nvoid main(){\n  vec4 color=texture2D(colorTexture,v_textureCoordinates);\n  float fSigma=float(SIGMA);\n  vec2 size=vec2(czm_viewport.z,czm_viewport.w)*scale*fSigma*2.0;\n  vec2 invSize=(1.0+bloomRadius)/size;\n  float weightSum=gaussianPdf(0.0,fSigma);\n  vec3 diffuseSum=texture2D(colorTexture,v_textureCoordinates).rgb*weightSum;\n  bool selected=false;\n  for(int i=0;i<KERNEL_RADIUS;i++){\n    float x=float(i);\n    float w=gaussianPdf(x,fSigma);\n    vec2 uvOffset=direction*invSize*x;\n    vec3 sample1=texture2D(colorTexture,v_textureCoordinates+uvOffset).rgb;\n    vec3 sample2=texture2D(colorTexture,v_textureCoordinates-uvOffset).rgb;\n    diffuseSum+=(sample1+sample2)*w;\n    weightSum+=2.0*w;\n  }\n  gl_FragColor=vec4(diffuseSum/weightSum,2.0);\n}\n";
 
 var VERSION = '0.0.1';
 
-export { ArrowGraphic$1 as ArrowGraphic, ArrowPolyline, BloomPass, CVT, Cartometry, CartometryManager, CartometryType$1 as CartometryType, CesiumProError$1 as CesiumProError, CircleScan, CursorTip, CustomPrimitive, CustomShader, DataLoader, DraggableElement, DynamicFadeMaterialProperty, DynamicScanMaterialProperty, DynamicSectorFadeMaterialProperty, DynamicSpreadMaterialProperty, DynamicSpreadWallMaterialProperty, DynamicWareMaterialProperty, Event, Graphic, GraphicType$1 as GraphicType, GroundSkyBox, Model, ModelAttachVector, NodeGraphic, PBF$1 as PBF, PlotUtil, Plotting, PointGraphic, PolygonGraphic, PolygonPrimitive, PolylineFlowMaterialProperty, PolylineGlowMaterialProperty, PolylineGraphic, PolylineTrailLinkMaterialProperty, PostProcessing, Properties, RadarScan, SectorGeometry as SectorGeoemetry, SpecularReflection, flyTo$1 as StepFlyTo, URL, VERSION, VectorTileProvider, ViewerParams, WaterFaceAppearance, WaterFacePrimitive, shader as _shaderGroundSkyBoxFS, shader$1 as _shaderGroundSkyBoxVS, shader$l as _shaderbloom, shader$g as _shadercircleScan, shader$j as _shaderdynamicFlowWallMaterial, shader$4 as _shaderdynamicScanMaterial, shader$5 as _shaderdynamicSectorFadeMaterial, shader$6 as _shaderdynamicSpreadMaterial, shader$7 as _shaderdynamicSpreadWallMaterial, shader$8 as _shaderdynamicWareMaterial, shader$9 as _shaderpolylineFlowMaterial, shader$a as _shaderpolylineGlowMaterial, shader$k as _shaderpolylineTrackMaterial, shader$b as _shaderpolylineTrailLinkMaterial, shader$h as _shaderradarScan, shader$m as _shaderselected, shader$n as _shaderseperableBlur, shader$i as _shaderspecularReflection, fs as _shaderwaterAppearanceFS, vs as _shaderwaterAppearanceVS, shader$2 as _shaderwaterFaceFS, shader$c as _shaderwaterFaceMaterial, shader$3 as _shaderwaterFaceVS, _abstract as abstract, errorCatch as ajaxCatch, ArrowGraphic as arrow, checkViewer, clone, createTilesetShader, createViewer, dateFormat, defaultValue$1 as defaultValue, defined, depthTest, destroyObject, filesaver, flyChinaHome, flyTo, fxaa, guid, html2canvas_default$1 as html2canvas, jQuery as jquery, SuperGif as libgif, logo, NetCDFReaderExport$1 as netcdfjs, pickPosition, pointVisibility as pointVisiblity, randomPosition, shapefile$1 as shapefile, area as turfArea, turfHelpers, turfMeta };
+export { ArrowGraphic$1 as ArrowGraphic, ArrowPolyline, BillboardGraphic as BillBoardGraphic, BloomPass, CVT, Cartometry, CartometryManager, CartometryType$1 as CartometryType, CesiumProError$1 as CesiumProError, CircleScan, CursorTip, CustomPrimitive, CustomShader, DataLoader, DraggableElement, DynamicFadeMaterialProperty, DynamicScanMaterialProperty, DynamicSectorFadeMaterialProperty, DynamicSpreadMaterialProperty, DynamicSpreadWallMaterialProperty, DynamicWareMaterialProperty, Event, Graphic, GraphicType$1 as GraphicType, GroundSkyBox, Model, ModelAttachVector, ModelGraphic, NodeGraphic, PBF$1 as PBF, PlotUtil, Plotting, PointGraphic, PolygonGraphic, PolygonPrimitive, PolylineFlowMaterialProperty, PolylineGlowMaterialProperty, PolylineGraphic, PolylineTrailLinkMaterialProperty, PostProcessing, Properties, RadarScan, SectorGeometry as SectorGeoemetry, SpecularReflection, flyTo$1 as StepFlyTo, URL, UnrealBloomPass, VERSION, VectorTileProvider, ViewerParams, WaterFaceAppearance, WaterFacePrimitive, shader as _shaderGroundSkyBoxFS, shader$1 as _shaderGroundSkyBoxVS, shader$m as _shaderbloom, shader$g as _shadercircleScan, shader$j as _shaderdynamicFlowWallMaterial, shader$4 as _shaderdynamicScanMaterial, shader$5 as _shaderdynamicSectorFadeMaterial, shader$6 as _shaderdynamicSpreadMaterial, shader$7 as _shaderdynamicSpreadWallMaterial, shader$8 as _shaderdynamicWareMaterial, shader$k as _shaderdynamicWaterMaterial, shader$9 as _shaderpolylineFlowMaterial, shader$a as _shaderpolylineGlowMaterial, shader$l as _shaderpolylineTrackMaterial, shader$b as _shaderpolylineTrailLinkMaterial, shader$h as _shaderradarScan, shader$n as _shaderselected, shader$o as _shaderseperableBlur, shader$i as _shaderspecularReflection, fs as _shaderwaterAppearanceFS, vs as _shaderwaterAppearanceVS, shader$2 as _shaderwaterFaceFS, shader$c as _shaderwaterFaceMaterial, shader$3 as _shaderwaterFaceVS, _abstract as abstract, errorCatch as ajaxCatch, ArrowGraphic as arrow, checkViewer, clone, createTilesetShader, createViewer, dateFormat, defaultValue$1 as defaultValue, defined, depthTest, destroyObject, filesaver, flyChinaHome, flyTo, fxaa, guid, html2canvas_default$1 as html2canvas, jQuery as jquery, SuperGif as libgif, logo, NetCDFReaderExport$1 as netcdfjs, pickPosition, pointVisibility as pointVisiblity, randomPosition, shapefile$1 as shapefile, area as turfArea, turfHelpers, turfMeta };
 //# sourceMappingURL=CesiumPro.esm.js.map
