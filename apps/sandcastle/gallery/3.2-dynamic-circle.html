@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <script type="text/javascript" src="../../../thirdParty/CesiumUnminified/Cesium.js"></script>
+
+    <script type="text/javascript" src='../../../build/CesiumProUnminified/CesiumPro.umd.js'>
+
+    </script>
+    <script src="../../thirdParty/Sandcastle.js"></script>
+    <link href="../../thirdParty/Sandcastle.css" rel="stylesheet" />
+    <link href="../../../build/CesiumProUnminified/assets/core.css" rel="stylesheet" />
+    <link href="../../../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+
+    <title>Document</title>
+
+    <style media="screen">
+      html,
+      body,
+      #map {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        margin: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <script type="text/javascript">
+      const viewer = CesiumPro.createViewer('map');
+      //方法一：创建一个圆或多边形，然后使用动态材质
+      const circle = viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(90, 35),
+        ellipse: {
+          semiMajorAxis: 10000,
+          semiMinorAxis: 10000,
+          material: new CesiumPro.DynamicSpreadMaterialProperty({
+            color: Cesium.Color.RED,
+            duration: 1000
+          })
+        }
+      })
+      //方法二：创建CircleScan对象
+      const circleScan = new CesiumPro.CircleScan({
+        center: Cesium.Cartesian3.fromDegrees(90.1, 35),
+        radius: 10000,
+        color: Cesium.Color.GOLD,
+        duration: 1000
+      })
+      circleScan.addTo(viewer);
+      circleScan.zoomTo()
+      // viewer.flyTo(circle)
+      CesiumPro.depthTest(viewer);
+    </script>
+  </body>
+
+</html>

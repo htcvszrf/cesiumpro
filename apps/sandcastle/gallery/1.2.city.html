@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <script type="text/javascript" src="../../../thirdParty/CesiumUnminified/Cesium.js"></script>
+
+    <script type="text/javascript" src='../../../build/CesiumProUnminified/CesiumPro.umd.js'>
+
+    </script>
+    <script src="../../thirdParty/Sandcastle.js"></script>
+    <link href="../../thirdParty/Sandcastle.css" rel="stylesheet" />
+    <link href="../../../build/CesiumProUnminified/assets/core.css" rel="stylesheet" />
+    <link href="../../../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+
+    <title>Document</title>
+
+    <style media="screen">
+      html,
+      body,
+      #map {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        margin: 0;
+      }
+
+      #toolbar {
+        margin: 10px;
+        padding: 2px 5px;
+        position: absolute;
+        right: 10px;
+        top: 2px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="toolbar"></div>
+    <script type="text/javascript">
+      const viewer = CesiumPro.createViewer('map');
+      const loader = CesiumPro.DataLoader.loadTileset(viewer, {
+        url: 'http://localhost:8080/模型/数字城市/tileset.json'
+      });
+      loader.tileset.style = new Cesium.Cesium3DTileStyle({
+        color: "vec4(0, 0.5, 1.0,1)",
+      })
+      const vs = `
+        varying float v_height;
+        void main(){
+          czm_cesiumpro_main();
+          v_height=(a_position * gltf_u_dec_position_normConstant).z;
+        }
+      `
+      const fs = `
+      varying float v_height;
+      void main(){
+        czm_cesiumpro_main();
+        float timeFactor = fract(czm_frameNumber / 120.0) * 3.14159265 * 2.0;\n
+        float maxHeight=60.0;
+        float flowFactor = v_height/maxHeight+sin(timeFactor)*0.1;\n
+        gl_FragColor *= vec4(flowFactor, flowFactor, flowFactor, 1.0);\n
+        float timeFactor2 = fract(czm_frameNumber / 400.0);
+        float normalizeHeight = clamp(v_height / 300.0, 0.0, 1.0);
+        timeFactor2 = abs(timeFactor2 - 0.5) * 2.0;
+        float glowIntensity = step(0.005, abs(normalizeHeight - timeFactor2));
+        gl_FragColor.rgb += gl_FragColor.rgb * (1.0 - glowIntensity);
+      }
+      `
+      CesiumPro.customTilesetShader(loader.tileset, {
+        vertexShader: vs,
+        fragmentShader: fs
+      })
+      viewer.flyTo(loader.tileset)
+    </script>
+  </body>
+
+</html>

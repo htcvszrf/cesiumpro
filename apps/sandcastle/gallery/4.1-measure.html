@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <script type="text/javascript" src="../../../thirdParty/CesiumUnminified/Cesium.js"></script>
+
+    <script type="text/javascript" src='../../../build/CesiumProUnminified/CesiumPro.umd.js'>
+
+    </script>
+    <script src="../../thirdParty/Sandcastle.js"></script>
+    <link href="../../thirdParty/Sandcastle.css" rel="stylesheet" />
+    <link href="../../../build/CesiumProUnminified/assets/core.css" rel="stylesheet" />
+    <link href="../../../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+
+
+    <title>Document</title>
+
+    <style media="screen">
+      html,
+      body,
+      #map {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        margin: 0;
+      }
+
+      #toolbar {
+        margin: 10px;
+        padding: 2px 5px;
+        position: absolute;
+        right: 10px;
+        top: 2px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="toolbar"></div>
+    <script type="text/javascript">
+      const viewer = CesiumPro.createViewer('map');
+      const CartometryType = CesiumPro.CartometryType;
+      const box = viewer.entities.add({
+        // position: Cesium.Cartesian3.fromDegrees(111, 30),
+        tileset: {
+          uri: '../data/models/BatchTableHierarchy/tileset.json',
+        }
+      })
+      viewer.flyTo(box);
+      CesiumPro.depthTest(viewer);
+      const manager = new CesiumPro.CartometryManager({
+        viewer,
+        formatText: function(value, type, isLast) {
+          if (type === CartometryType.SPACE_DISTANCE || type === CartometryType.SURFACE_DISTANCE ||
+            type === CartometryType.HEIGHT) {
+            if (isLast) {
+              return "总长度" + value.toFixed(2) + "m";
+            }
+            return value.toFixed(2) + 'm'
+          } else if (type === CartometryType.SPACE_AREA || type === CartometryType.SURFACE_AREA) {
+            return value.toFixed(2) + '平方米'
+          } else if (type === CartometryType.ANGLE) {
+            return value.toFixed(2) + '度'
+          }
+        },
+        auxiliaryGeometry: { //是否在量算时添加辅助几何体
+          distance: true,
+          area: false,
+          height: true,
+          angle: true,
+        },
+        nodeMode: {
+          distance: true,
+          area: true,
+          height: false,
+          angle: false,
+        }
+      })
+
+      Sandcastle.addButton('空间距离', function() {
+        manager.do(CartometryType.SPACE_DISTANCE);
+      })
+      Sandcastle.addButton('贴地距离', function() {
+        manager.do(CartometryType.SURFACE_DISTANCE);
+      })
+      Sandcastle.addButton('空间面积', function() {
+        manager.do(CartometryType.SPACE_AREA);
+      })
+      Sandcastle.addButton('贴地面积', function() {
+        manager.surfaceArea()
+      })
+      Sandcastle.addButton('高度量算', function() {
+        manager.do(CartometryType.HEIGHT);
+      })
+      Sandcastle.addButton('方位角', function() {
+        manager.do(CartometryType.ANGLE);
+      })
+      Sandcastle.addButton('清空', function() {
+        manager.clear();
+      })
+    </script>
+  </body>
+
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <script type="text/javascript" src="../../../thirdParty/CesiumUnminified/Cesium.js"></script>
+
+    <script type="text/javascript" src='../../../build/CesiumProUnminified/CesiumPro.umd.js'>
+
+    </script>
+    <script src="../../thirdParty/Sandcastle.js"></script>
+    <link href="../../thirdParty/Sandcastle.css" rel="stylesheet" />
+    <link href="../../../build/CesiumProUnminified/assets/core.css" rel="stylesheet" />
+    <link href="../../../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+
+    <title>Document</title>
+
+    <style media="screen">
+      html,
+      body,
+      #map {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        margin: 0;
+      }
+
+      #toolbar {
+        margin: 10px;
+        padding: 2px 5px;
+        position: absolute;
+        right: 10px;
+        top: 2px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="toolbar"></div>
+    <script type="text/javascript">
+      const viewer = CesiumPro.createViewer('map');
+      const loader = CesiumPro.DataLoader.loadTileset(viewer, {
+        url: '../data/tileset/xian/tileset.json',
+        maximumScreenSpaceError: 0.01
+      });
+      const vs = `
+        varying float v_height;
+        void main(){
+          czm_cesiumpro_main();
+          v_height=(a_position ).z;
+        }
+      `
+      const fs = `
+      varying float v_height;
+      void main(){
+        czm_cesiumpro_main();
+        float factor=clamp(v_height/50.0,0.0,1.0);
+        gl_FragColor=vec4(1.0,0.0,0.0,1.0);
+        gl_FragColor*=vec4(factor,factor,factor,1.0);
+      }
+      `
+      const shader = new CesiumPro.CustomShader({
+        fragmentShader: fs,
+        vertexShader: vs
+      })
+      const customShader = CesiumPro.createTilesetShader(loader.tileset, shader)
+      viewer.flyTo(loader.tileset);
+      const checkbox = Sandcastle.addCheckButton('自定义shader', function(checked) {
+        customShader.enabled = checked;
+      })
+      Sandcastle.addLabel('自定义shader')
+      checkbox.checked = customShader.enabled;
+    </script>
+  </body>
+
+</html>

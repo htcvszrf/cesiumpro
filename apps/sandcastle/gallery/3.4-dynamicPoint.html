@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <script type="text/javascript" src="../../../thirdParty/CesiumUnminified/Cesium.js"></script>
+
+    <script type="text/javascript" src='../../../build/CesiumProUnminified/CesiumPro.umd.js'>
+
+    </script>
+    <script src="../../thirdParty/Sandcastle.js"></script>
+    <link href="../../thirdParty/Sandcastle.css" rel="stylesheet" />
+    <link href="../../../build/CesiumProUnminified/assets/core.css" rel="stylesheet" />
+    <link href="../../../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+    <script src="./utils.js"></script>
+
+    <title>Document</title>
+
+    <style media="screen">
+      html,
+      body,
+      #map {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        margin: 0;
+      }
+
+      #toolbar {
+        margin: 10px;
+        padding: 2px 5px;
+        position: absolute;
+        right: 10px;
+        top: 2px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="toolbar"></div>
+    <script type="text/javascript">
+      const viewer = CesiumPro.createViewer('map');
+      const rectangle = Cesium.Rectangle.fromDegrees(110, 30, 110.01, 30.01);
+      const positions = randomPosition(rectangle, 50);
+      const entities = []
+      const Color = Cesium.Color;
+      const colorList = [new Color(77 / 255, 201 / 255, 1, 0.9),
+        new Color(1, 201 / 255, 38 / 255, 0.9),
+        new Color(100 / 255, 201 / 255, 200 / 255, 0.9),
+        new Color(100 / 255, 201 / 255, 38 / 255, 0.7),
+        new Color(221 / 255, 221 / 255, 221 / 255, 0.9)
+      ]
+
+      for (let i = 0, length = positions.length; i < length; i++) {
+        const colorIndex = i % 5;
+        const materialIndex = i % 2;
+        const color = colorList[colorIndex];
+        let material = new CesiumPro.DynamicWareMaterialProperty({
+          color,
+          duration: 2000
+        })
+        if (materialIndex === 1) {
+          material = new CesiumPro.DynamicSpreadMaterialProperty({
+            color,
+            gradient: 1,
+            duration: 2000
+          })
+        }
+        entities.push(viewer.entities.add({
+          position: positions[i],
+          ellipse: {
+            semiMinorAxis: 50,
+            semiMajorAxis: 50,
+            material
+          }
+        }))
+      }
+      viewer.flyTo(entities)
+    </script>
+  </body>
+
+</html>

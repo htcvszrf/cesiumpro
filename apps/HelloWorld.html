@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <script type="text/javascript" src="../thirdParty/CesiumUnminified/Cesium.js">
+
+    </script>
+    <link href="../thirdParty/CesiumUnminified/Widgets/Widgets.css" rel="stylesheet" />
+    <link href="../build/CesiumPro/assets/core.css" rel="stylesheet" />
+    <script src="http://localhost:8080/LSGlobe/LSGlobe.js"></script>
+
+    <title>Hello World</title>
+    <script src="./LSGlobe.js"></script>
+    <style type="text/css">
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      #map {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map">
+
+    </div>
+    <script type="module">
+      import {
+        createViewer,
+        logo,
+        CartometryManager,
+        CartometryType,
+        ModelAttachVector,
+        DataLoader,
+        ViewerParams,
+        PlotUtil,
+
+        PointGraphic,
+        NodeGraphic,
+        PolylineGraphic,
+        PolygonGraphic,
+        GraphicType,
+        URL,
+        ArrowGraphic,
+        VectorTileProvider,
+        depthTest,
+        BloomPass,
+        CircleScan,
+        RadarScan,
+        DynamicSpreadWallMaterialProperty,
+        PolylineFlowMaterialProperty,
+        DynamicWareMaterialProperty,
+        SpecularReflection,
+        WaterFaceAppearance,
+        flyTo,
+        PostProcessing,
+        WaterFacePrimitive,
+        PolygonPrimitive,
+      } from '../build/CesiumProUnminified/CesiumPro.esm.js'
+      window.CESIUMPRO_BASE_URL = '../build/CesiumProUnminified/'
+      const viewer = createViewer('map', {});
+      logo()
+      window.viewer = viewer;
+      // depthTest(viewer, true);
+      // window.lt = DataLoader.loadTileset(viewer, {
+      //   url: 'http://localhost:8080/模型/大雁塔/3dtileset/tileset.json'
+      // }, {
+      //   position: Cesium.Cartesian3.fromRadians(1.9016974701882112,
+      //     0.5972325152147303),
+      //   height: -399
+      // })
+      // viewer.flyTo(lt.tileset);
+      const sr = new SpecularReflection(viewer);
+
+      window.sr = sr;
+      // const water = viewer.entities.add({
+      //   polygon: {
+      //     hierarchy: Cesium.Cartesian3.fromDegreesArray([110, 30, 110.5, 30, 110.5, 30.5, 110, 30.5]),
+      //     material: new WaterFaceMaterialProperty()
+      //   }
+      // })
+      // viewer.flyTo(water);
+      flyTo(viewer, {
+        destination: Cesium.Cartesian3.fromRadians(1.90168174313679, 0.5972732924673276)
+      })
+      const pg = new PolygonPrimitive({
+        center: Cesium.Cartesian3.fromRadians(1.90168174313679, 0.5972732924673276, 0)
+      })
+      // viewer.scene.primitives.add(pg)
+      const ps = Cesium.Cartesian3.fromDegreesArrayHeights([120.42725185355557, 31.32495479978069, 1, 120.42725192244664, 31.32474725840275, 1, 120.42768115491943, 31.325979229989574, 1, 120.42767957585357, 31.32598061305948, 1, 120.42767672819966,
+        31.3259810858671, 1, 120.4276178583967,
+        31.325995449234163, 1, 120.4276149064843, 31.325991229191544, 1, 120.42761293515326, 31.325986801156315, 1, 120.42761155883233, 31.325982166299372, 1, 120.42725190899387, 31.32495488878544, 1, 120.42725190899387,
+        31.32495488878544, 1
+      ])
+      const ps1 = Cesium.Cartesian3.fromRadiansArray([1.90168174313679,
+        0.5972732924673276,
+        1.9017230593134629,
+        0.5972734968580539,
+        1.9017177812531605,
+        0.5972242141220793,
+        1.90168212565758,
+        0.5972259534519064
+      ])
+      const polygon = new Cesium.PolygonGeometry({
+        // materialSupport: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat,
+        // extrudedHeight: 30,
+        polygonHierarchy: new Cesium.PolygonHierarchy(ps1),
+        height: 0.24
+      })
+      const instance = new Cesium.GeometryInstance({
+        geometry: polygon
+      })
+      const appearance = new WaterFaceAppearance({
+        frequency: 10000,
+        specularIntensity: 0.1
+      })
+      setTimeout(() => {
+        viewer.scene.primitives.add(
+          new Cesium.Primitive({
+            geometryInstances: [instance],
+            appearance
+          })
+        )
+      }, 3000)
+      depthTest(viewer, )
+      const wf = new WaterFacePrimitive({
+        viewer,
+        waterPolygon: polygon
+      })
+      window.wf = wf
+      // viewer.scene.primitives.add(wf)
+      window.lt = DataLoader.loadTileset(viewer, {
+        url: 'http://localhost:8080/模型/数字城市/tileset.json'
+      }, {
+        position: Cesium.Cartesian3.fromRadians(1.90168212565758,
+          0.5972259534519064)
+      })
+      sr.selected.push(lt.tileset)
+      sr.addTo(viewer);
+
+      function createPostStage() {
+        const postProcessStage = new Cesium.PostProcessStage({
+          fragmentShader: `
+          uniform sampler2D colorTexture;
+          uniform sampler2D depthTexture;
+          varying vec2 v_textureCoordinates;
+          void main(){
+            vec4 color=texture2D(colorTexture,v_textureCoordinates);
+            gl_FragColor=vec4(color.r*0.2,color.g*0.4,color.b*0.6,1.0);
+          }
+          `
+        })
+        return postProcessStage
+      }
+      const poststage = new PostProcessing();
+      poststage.createPostStage = createPostStage.bind(poststage);
+      // poststage.addTo(viewer);
+      // viewer.flyTo(lt.tileset)
+    </script>
+  </body>
+
+</html>
