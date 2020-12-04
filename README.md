@@ -8,3 +8,6 @@ npm run build
 ```sh
 npm run doc
 ```
+
+## License
+[GPL3.0](http://www.gnu.org/licenses/gpl-3.0.html)
